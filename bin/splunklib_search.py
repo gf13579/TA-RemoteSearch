@@ -3,11 +3,11 @@
 import sys
 import argparse
 import os
-import logging
 import json
 import splunklib.client as splunk_client
 from urllib.parse import urlparse
 import urllib
+from loguru import logger
 
 # From James Hodgkinson's fork of the Splunk Python SDK, Feb 2022
 # https://github.com/splunk/splunk-sdk-python/pull/435
@@ -29,8 +29,7 @@ class splunklib_search:
         proxy=None,
         search_timeout=3600,
         check_cert=False,
-        logger_name=None,
-        log_level=logging.INFO,
+        log_level="INFO",
     ):
         self._base_url = base_url
         self._session_key = None
@@ -50,21 +49,6 @@ class splunklib_search:
             self._proxy = os.environ.get("HTTPS_PROXY")
         if proxy:
             self._proxy = proxy
-
-        if logger_name:
-            try:
-                self._logger = logging.getLogger(logger_name)
-            except Exception as e:
-                logging.basicConfig(format="%(created)s %(message)s")
-                self._logger = logging.getLogger()
-                self._logger.setLevel(log_level)
-        else:
-            logging.basicConfig(
-                format="%(asctime)s, Level=%(levelname)s, Pid=%(process)s, Logger=%(name)s, File=%(filename)s, Line=%(lineno)s, %(message)s"
-            )
-
-            self._logger = logging.getLogger()
-            self._logger.setLevel(log_level)
 
         self._authenticate(username=username, password=password, auth_token=auth_token)
 
@@ -151,10 +135,12 @@ class splunklib_search:
             )
         except Exception as e:
             error_string = f"Failed to authenticate against {self._base_url} with provided credentials. Exception: {e}"
-            self._logger.log(logging.ERROR, error_string)
+            logger.error(error_string)
             raise Exception(error_string)
 
-    def run_search(self, search, max_search_time=3600):
+    def run_search(
+        self, search, earliest_time=None, latest_time=None, max_search_time=3600
+    ):
         """
         From https://docs.splunk.com/Documentation/Splunk/latest/RESTREF/RESTsearch#search.2Fjobs
 
@@ -180,6 +166,11 @@ class splunklib_search:
             "max_time": max_search_time,
         }
 
+        if earliest_time:
+            kwargs_search["earliest_time"] = earliest_time
+        if latest_time:
+            kwargs_search["latest_time"] = latest_time
+
         runner = getattr(self._service.jobs, "export")
 
         # I'm not sure there's actually any value in trying to use yield here over collecting the results in a list and returning them
@@ -187,11 +178,13 @@ class splunklib_search:
         # as we're getting them all at once anyway, and it'd mean we could log more meaningful events about what's happening
 
         # results = []
-        self._logger.log(logging.INFO, f"About to initiate remote search")
+        logger.info(
+            f"About to initiate remote search. kwargs_search is {json.dumps(kwargs_search)}"
+        )
+
         for result in JSONResultsReader(runner(search, **kwargs_search)):
             if isinstance(result, Message):
-                message = "message: ", json.dumps(result, indent=4, default=str)
-                self._logger.log(logging.INFO, message)
+                logger.info("message: " + json.dumps(result, indent=4, default=str))
 
             if "result" in result:
                 if "_epochtime" in result["result"]:
@@ -199,7 +192,7 @@ class splunklib_search:
                 # results.append(result['result'])
                 yield result["result"]
             else:
-                self._logger.log(logging.ERROR, f"No 'result' key in result: {result}")
+                logger.error(f"No 'result' key in result: {result}")
 
         # message=f"Number of results retrieved: {len(results)}"
         # self._logger.log(logging.INFO, message)
@@ -234,10 +227,10 @@ def main() -> int:
         auth_token = os.environ["SPL_AUTH_TOKEN"]
         username = password = None
     else:
-        logging.error(
+        logger.error(
             "Store Splunk username and password in env vars for testing: SPL_USERNAME and SPL_PASSWORD"
         )
-        logging.error("e.g. export SPL_USERNAME=admin SPL_PASSWORD=your_password_here")
+        logger.error("e.g. export SPL_USERNAME=admin SPL_PASSWORD=your_password_here")
         return 1
 
     proxy = None

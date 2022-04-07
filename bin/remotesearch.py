@@ -4,6 +4,30 @@ import sys
 import os
 import time
 import json
+from loguru import logger
+from pprint import pformat, pprint
+
+# Our TA's custom module
+import splunklib_search
+
+# For VS Code debugging
+"""
+sys.path.append(
+    os.path.join(os.environ["SPLUNK_HOME"], "etc", "apps", "SA-VSCode", "bin")
+)
+
+# Uncomment to enable debugging with VS Code
+import splunk_debug as dbg
+
+dbg.enable_debugging(timeout=20)
+"""
+
+log_file = os.environ["SPLUNK_HOME"] + "/var/log/splunk/TA-RemoteSearch.log"
+logger.remove()
+logger.add(sink=log_file, level="INFO")
+logger.add(sink=sys.stderr, level="ERROR")
+
+logger.info("Early test")
 
 # For the SDK
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
@@ -14,9 +38,6 @@ from splunklib.searchcommands import (
     Option,
     validators,
 )
-
-# Our TA's custom module
-import splunklib_search
 
 
 @Configuration()
@@ -40,11 +61,14 @@ class remotesearchCommand(GeneratingCommand):
     check_cert = Option(require=False)
 
     def generate(self):
+        # logger.info("in generate() - {}".format(pformat(vars(self))))
         base_url = self.base_url
         search = self.search
         include_metadata = self.include_metadata or False
         max_search_time = self.max_search_time or 3600
         check_cert = self.check_cert
+        earliest_time = self._metadata.searchinfo.earliest_time
+        latest_time = self._metadata.searchinfo.latest_time
 
         username = password = auth_token = None
 
@@ -62,7 +86,7 @@ class remotesearchCommand(GeneratingCommand):
                     auth_token = creds_json["auth_token"]
         if (not username or not password) and not auth_token:
             error = "error retrieving  credentials - are they defined?"
-            self.logger.error(error)
+            logger.error(error)
             yield {"_time": time.time(), "creds": error}
             return
 
@@ -71,10 +95,15 @@ class remotesearchCommand(GeneratingCommand):
             username=username,
             password=password,
             auth_token=auth_token,
-            logger_name=self.logger.name,
             check_cert=check_cert,
         )
-        results = api_search.run_search(search=search, max_search_time=max_search_time)
+
+        results = api_search.run_search(
+            search=search,
+            max_search_time=max_search_time,
+            earliest_time=earliest_time,
+            latest_time=latest_time,
+        )
 
         if include_metadata:
             for result in results:
