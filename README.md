@@ -6,6 +6,7 @@
 | :--------- | :------ | :-------------- |
 | 2022-02-15 | 0.0.1   | Initial release |
 | 2022-05-27 | 0.0.2   | Various fixes |
+| 2024-05-03 | 0.0.3   | Added win32_setctime.py - loguru dependency on Windows |
 
 ## Overview
 
