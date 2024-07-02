@@ -57,6 +57,7 @@ class remotesearchCommand(GeneratingCommand):
     base_url = Option(require=True)
     search = Option(require=True)
     include_metadata = Option(require=False, default=False)
+    is_transformed = Option(require=False, default=False)
     max_search_time = Option(require=False)
     check_cert = Option(require=False)
 
@@ -65,6 +66,7 @@ class remotesearchCommand(GeneratingCommand):
         base_url = self.base_url
         search = self.search
         include_metadata = self.include_metadata or False
+        is_transformed = Option(require=False, default=False)
         max_search_time = self.max_search_time or 3600
         check_cert = self.check_cert
         earliest_time = self._metadata.searchinfo.earliest_time
@@ -105,9 +107,27 @@ class remotesearchCommand(GeneratingCommand):
             latest_time=latest_time,
         )
 
+        # set with all values in case of transformed data is used
+        if is_transformed:
+            all_fields = set()
+            result_list = list()
+            for result in results:
+                result_list.append(result)
+                fields = result.keys()
+                for field in fields:
+                    all_fields.add(field)
+
         if include_metadata:
             for result in results:
                 yield {"_raw": result}
+        elif is_transformed:
+            for result in result_list:
+                for field in all_fields:
+                    if f"{field}" in result:
+                        pass
+                    else:
+                        result[f"{field}"] = None
+                yield result
         else:
             for result in results:
                 yield result
